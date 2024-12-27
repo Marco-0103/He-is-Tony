@@ -21,7 +21,7 @@ async def on_ready():
 
 async def load_extensions():
     await bot.load_extension("music_cog")
-    await bot.load_extension("Conversation")
+    await bot.load_extension("Conversation_cog")
 
 @bot.event
 async def setup_hook():
@@ -32,3 +32,6 @@ async def on_disconnect():
     print("Bot has been disconnected.")
 
 bot.run(os.getenv("DISCORD_TOKEN"))
+
+
+
