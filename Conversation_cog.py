@@ -7,6 +7,7 @@ async def setup(bot):
     bot.tree.add_command(hello)
     bot.tree.add_command(smile)
     bot.tree.add_command(gn)
+    bot.tree.add_command(love)
 
 @commands.command()
 async def sleep(ctx):
@@ -29,6 +30,6 @@ async def smile(interaction: discord.Interaction ):
 async def gn(interaction: discord.Interaction ):
     await interaction.response.send_message("gn b:heart:")
 
-#@bot.tree.command(name="love")
-#async def love(interaction: discord.Interaction ):
-#   await interaction.response.send_message("2018-2023: O2\nNow: 他是")
+@discord.app_commands.command(name="love")
+async def love(interaction: discord.Interaction ):
+    await interaction.response.send_message("2018-2023: O2\nNow: 他是")
