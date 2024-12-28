@@ -3,7 +3,7 @@ from discord.ext import commands
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  #Load all environmental variables from .env
 
 # Create intents
 intents = discord.Intents.default()
@@ -31,7 +31,7 @@ async def setup_hook():
 async def on_disconnect():
     print("Bot has been disconnected.")
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+bot.run(os.getenv("DISCORD_TOKEN"))  #Run the bot with discord token
 
 
 
