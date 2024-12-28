@@ -159,7 +159,7 @@ class MusicControls(View):
 
 
     #additional functions added on 27/12/24
-    @discord.ui.button(label="Pause", style=ButtonStyle.secondary)
+    @discord.ui.button(label="Pause", style=ButtonStyle.primary)
     async def pause_resume_button(self, interaction: Interaction, button: Button):
         if not self.ctx.voice_client:
             await interaction.response.send_message("❌ Not playing any music. Tony mad😡 ", ephemeral=True)
