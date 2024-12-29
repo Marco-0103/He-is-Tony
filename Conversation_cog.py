@@ -9,6 +9,7 @@ async def setup(bot):
     bot.tree.add_command(gn)
     bot.tree.add_command(love)
     bot.tree.add_command(p)
+    bot.tree.add_command(o2)
 
 @commands.command()
 async def sleep(ctx):
@@ -38,3 +39,7 @@ async def love(interaction: discord.Interaction ):
 @discord.app_commands.command(name="p",description="Who play?")
 async def p(interaction: discord.Interaction):
     await interaction.response.send_message("Who play?")
+
+@discord.app_commands.command(name="o2",description="Tony heartbroken史")
+async def o2(interaction: discord.Interaction):
+    await interaction.response.send_message("I love O2 !!!")
