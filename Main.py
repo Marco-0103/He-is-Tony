@@ -22,6 +22,7 @@ async def on_ready():
 async def load_extensions():
     await bot.load_extension("music_cog")
     await bot.load_extension("Conversation_cog")
+    await bot.load_extension("connect4_cog")
 
 @bot.event
 async def setup_hook():
