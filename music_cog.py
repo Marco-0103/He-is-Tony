@@ -1,197 +1,261 @@
 import discord
 from discord.ext import commands
-from discord import ButtonStyle, Interaction, app_commands, PCMVolumeTransformer
-from discord.ui import View, Button
-from pyexpat.errors import messages
 from yt_dlp import YoutubeDL
-from asyncio import Queue
+from discord import FFmpegOpusAudio
+import asyncio
 
-
-class Music(commands.Cog):
+class MusicCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.music_queues = {}
+        self.queues = {}
+        self.FFMPEG_OPTIONS = {
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'options': '-vn -c:a libopus -b:a 96k -ar 48000 -ac 2'
+        }
+        
         self.YDL_OPTIONS = {
             'format': 'bestaudio/best',
             'noplaylist': True,
             'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False
-        }
-        self.FFMPEG_OPTIONS = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn'
+            'extractaudio': True,
+            'audioformat': 'opus',
+            'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
         }
 
-    @app_commands.command(name="play", description="Play a YouTube video in voice channel")
-    async def play(self, interaction: discord.Interaction, url: str):
-        print(f"Received Youtube URL: {url}")
-        ctx = await self.bot.get_context(interaction)
-        if not interaction.user.voice:
-            await interaction.response.send_message("❌ You need to be in a voice channel to use this command.")
-            return
-
-        await interaction.response.defer()
-
-        try:
-            voice_channel = interaction.user.voice.channel
-            if interaction.guild.id not in self.music_queues:
-                self.music_queues[interaction.guild.id] = Queue()
-
-            ctx = await self.bot.get_context(interaction)
-            voice_client = ctx.voice_client
-
-            if voice_client is None:
-                voice_client = await voice_channel.connect()
-            elif voice_client.channel != voice_channel:
-                await voice_client.move_to(voice_channel)
-
-            with YoutubeDL(self.YDL_OPTIONS) as ydl:
-                try:
-                    info = ydl.extract_info(url, download=False)
-                    url2 = info['url']
-                    title = info['title']
-                except Exception as e:
-                    await interaction.followup.send(f"❌ Error extracting video info: {str(e)}")
-                    return
-
-            await self.music_queues[interaction.guild.id].put((url2, title))
-            await interaction.followup.send(f"✅ Added **{title}** to the queue!")
-
-            if not voice_client.is_playing():
-                await self.play_next(ctx)
-                controls = MusicControls(ctx,self)
-                message = await interaction.channel.send(view=controls)
-                await controls.set_message(message)
-
-        except Exception as e:
-            await interaction.followup.send(f"❌ An error occurred: {str(e)}")
+    def get_queue(self, ctx):
+        guild_id = ctx.guild.id
+        if guild_id not in self.queues:
+            self.queues[guild_id] = []
+        return self.queues[guild_id]
 
     async def play_next(self, ctx):
+        queue = self.get_queue(ctx)
+        if len(queue) > 0:
+            url = queue.pop(0)
+            try:
+                player = await self.get_player(url)
+                if player:
+                    ctx.voice_client.play(player, after=lambda e: asyncio.run_coroutine_threadsafe(self.play_next(ctx), self.bot.loop))
+                    await self.send_now_playing(ctx, url)
+            except Exception as e:
+                print(f"Error playing next song: {e}")
+                await self.play_next(ctx)
+
+    async def get_player(self, url):
         try:
-            if ctx.guild.id not in self.music_queues:
-                return
-
-            queue = self.music_queues[ctx.guild.id]
-            if queue.empty():
-                if ctx.voice_client:
-                    await ctx.voice_client.disconnect()
-                del self.music_queues[ctx.guild.id]
-                return
-
-            url, title = await queue.get()
-
-            if not ctx.voice_client or not ctx.voice_client.is_connected():
-                return
-
-            audio_source = discord.FFmpegPCMAudio(url, **self.FFMPEG_OPTIONS)
-            transformed_source = PCMVolumeTransformer(audio_source, volume=1.0)
-
-            def after_playing(error):
-                if error:
-                    print(f"Error in playback: {error}")
-                self.bot.loop.create_task(self.play_next(ctx))
-
-            ctx.voice_client.play(transformed_source, after=after_playing)
-            await ctx.channel.send(f"🎶 Now playing: **{title}**")
-
+            with YoutubeDL(self.YDL_OPTIONS) as ydl:
+                info = ydl.extract_info(url, download=False)
+                url2 = info['url']
+                return FFmpegOpusAudio(url2, **self.FFMPEG_OPTIONS)
         except Exception as e:
-            print(f"Error in play_next: {str(e)}")
-            await ctx.channel.send("❌ An error occurred while playing the song.")
+            print(f"Error getting player: {e}")
+            return None
 
-    # Volume command using app_commands
-    @app_commands.command(name="volume", description="Adjust the volume (0-200)")
-    async def volume(self, interaction: discord.Interaction, newvolume: int):
-        ctx = await self.bot.get_context(interaction)
+    async def send_now_playing(self, ctx, url):
+        try:
+            with YoutubeDL(self.YDL_OPTIONS) as ydl:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown Title')
+                duration = info.get('duration', 0)
+            
+            embed = discord.Embed(
+                title="Now Playing",
+                description=f"[{title}]({url})",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Duration", value=self.format_duration(duration))
+            await ctx.send(embed=embed)
+        except Exception as e:
+            print(f"Error sending now playing embed: {e}")
 
-        if not ctx.voice_client:
-            await interaction.response.send_message("❌ I'm not connected to a voice channel.")
-            return
-        if not ctx.voice_client.source:
-            await interaction.response.send_message("❌ I'm not playing anything.")
-            return
-        if 0 <= newvolume <= 200:
-            ctx.voice_client.source.volume = newvolume / 100
-            await interaction.response.send_message(f"黃俊景(景b)🔊 Set the volume to {newvolume}%")
-        else:
-            await interaction.response.send_message("❌ Volume must be between 0 and 200.")
+    def format_duration(self, seconds):
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes}:{seconds:02d}"
 
+    @commands.hybrid_command(name="play", description="Play music from YouTube")
+    async def play(self, ctx, url: str):
+        """Play music from a YouTube URL"""
+        try:
+            # Defer the response first to prevent interaction timeout
+            if ctx.interaction:
+                await ctx.interaction.response.defer()
+            
+            if ctx.voice_client is None:
+                if ctx.author.voice:
+                    await ctx.author.voice.channel.connect()
+                else:
+                    await ctx.send("You are not connected to a voice channel.")
+                    return
 
-# Music Controls (Interactive Buttons)
-class MusicControls(View):
-    def __init__(self, ctx,music_cog):
-        super().__init__(timeout=None)
-        self.ctx = ctx
-        self.music_cog = music_cog
-        self.message = None
-        self.is_paused = False
-
-    async def set_message(self,message):
-        self.message = message
-
-    @discord.ui.button(label="Skip", style=ButtonStyle.primary)
-    async def skip_button(self, interaction: Interaction, button: Button):
-        if not self.ctx.voice_client or not self.ctx.voice_client.is_playing():
-            await interaction.response.send_message("❌ No music is currently playing.", ephemeral=True)
-            return
-        self.ctx.voice_client.stop()
-        await interaction.response.send_message("⏭ Skipped the current song!")
-
-    @discord.ui.button(label="Stop", style=ButtonStyle.danger)
-    async def stop_button(self, interaction: Interaction, button: Button):
-        if not self.ctx.voice_client:
-            await interaction.response.send_message("❌ The bot is not connected to a voice channel.", ephemeral=True)
-            return
-        if self.ctx.guild.id in self.music_cog.music_queues:
-            del self.music_cog.music_queues[self.ctx.guild.id]
-        await self.ctx.voice_client.disconnect()
-        await interaction.response.send_message("🛑 Music stopped and the bot has left the voice channel.")
-
-    @discord.ui.button(label="Show Queue", style=ButtonStyle.secondary)
-    async def queue_button(self, interaction: Interaction, button: Button):
-        queue = self.music_cog. music_queues.get(self.ctx.guild.id)
-        if queue and not queue.empty():
-            queue_list = list(queue._queue)
-            queue_str = "\n".join([f"**{i + 1}. {item[1]}**" for i, item in enumerate(queue_list)])
-            await interaction.response.send_message(f"🎵 **Music Queue:**\n{queue_str}", ephemeral=True)
-        else:
-            await interaction.response.send_message("🎵 The queue is currently empty.", ephemeral=True)
-
-
-    #additional functions added on 27/12/24
-    @discord.ui.button(label="Pause", style=ButtonStyle.primary)
-    async def pause_resume_button(self, interaction: Interaction, button: Button):
-        if not self.ctx.voice_client:
-            await interaction.response.send_message("❌ Not playing any music. Tony mad😡 ", ephemeral=True)
-            return
-
-        if not self.is_paused:  #Music is playing, pause it.
-            if self.ctx.voice_client.is_playing():
-                self.ctx.voice_client.pause()
-                button.label = "Resume"
-                button.style = ButtonStyle.success
-                self.is_paused = True
-                await interaction.response.send_message("⏸ Music paused. Happy Tony😊")
-                if self.message:
-                    await self.message.edit(view=self)
+            if ctx.voice_client.is_playing():
+                queue = self.get_queue(ctx)
+                queue.append(url)
+                
+                with YoutubeDL(self.YDL_OPTIONS) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    title = info.get('title', 'Unknown Title')
+                
+                embed = discord.Embed(
+                    title="Added to Queue",
+                    description=f"[{title}]({url})",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Position in queue", value=f"{len(queue)}")
+                await ctx.send(embed=embed)
             else:
-                await interaction.response.send_message("❌ Music is not playing. Tony mad😡", ephemeral=True)
-        else: #Music is paused, resume it
-            if self.ctx.voice_client.is_paused():
-                self.ctx.voice_client.resume()
-                button.label = "Pause"
-                button.style = ButtonStyle.secondary
-                self.is_paused = False
-                await interaction.response.send_message("▶ Music resumed. Happy tony😊")
-                if self.message:
-                    await self.message.edit(view=self)
-            else:
-                await interaction.response.send_message("❌ Music is not paused. Tony mad😡", ephemeral=True)
+                player = await self.get_player(url)
+                if player:
+                    ctx.voice_client.play(player, after=lambda e: asyncio.run_coroutine_threadsafe(self.play_next(ctx), self.bot.loop))
+                    await self.send_now_playing(ctx, url)
+        except Exception as e:
+            print(f"Error in play command: {e}")
+            await ctx.send("An error occurred while processing your request.")
 
+    @commands.hybrid_command(name="pause", description="Pause the current song")
+    async def pause(self, ctx):
+        """Pause the currently playing song"""
+        if ctx.voice_client is None:
+            await ctx.send("I'm not connected to a voice channel.")
+            return
+        
+        if ctx.voice_client.is_paused():
+            await ctx.send("Already paused.")
+        elif ctx.voice_client.is_playing():
+            ctx.voice_client.pause()
+            await ctx.send("⏸ Paused")
+        else:
+            await ctx.send("Nothing is playing.")
+
+    @commands.hybrid_command(name="resume", description="Resume the current song")
+    async def resume(self, ctx):
+        """Resume the paused song"""
+        if ctx.voice_client is None:
+            await ctx.send("I'm not connected to a voice channel.")
+            return
+        
+        if ctx.voice_client.is_paused():
+            ctx.voice_client.resume()
+            await ctx.send("▶ Resumed")
+        elif ctx.voice_client.is_playing():
+            await ctx.send("Already playing.")
+        else:
+            await ctx.send("Nothing to resume.")
+
+    @commands.hybrid_command(name="stop", description="Stop the current song and clear the queue")
+    async def stop(self, ctx):
+        """Stop playback and clear the queue"""
+        if ctx.voice_client is None:
+            await ctx.send("I'm not connected to a voice channel.")
+            return
+        
+        ctx.voice_client.stop()
+        self.get_queue(ctx).clear()
+        await ctx.send("⏹ Stopped and cleared queue.")
+
+    @commands.hybrid_command(name="skip", description="Skip the current song")
+    async def skip(self, ctx):
+        """Skip the currently playing song"""
+        if ctx.voice_client is None:
+            await ctx.send("I'm not connected to a voice channel.")
+            return
+        
+        if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
+            ctx.voice_client.stop()
+            await ctx.send("⏭ Skipped")
+            await self.play_next(ctx)
+        else:
+            await ctx.send("Nothing is playing.")
+
+    @commands.hybrid_command(name="queue", description="Show the current queue")
+    async def show_queue(self, ctx):
+        """Show the current music queue"""
+        try:
+            # Defer the response immediately for slash commands
+            if ctx.interaction:
+                await ctx.interaction.response.defer()
+            
+            queue = self.get_queue(ctx)
+            if len(queue) == 0:
+                await ctx.send("The queue is empty.")
+                return
+            
+            embed = discord.Embed(title="Music Queue", color=discord.Color.gold())
+            
+            # Process first item immediately to show something quickly
+            if len(queue) > 0:
+                try:
+                    with YoutubeDL(self.YDL_OPTIONS) as ydl:
+                        info = ydl.extract_info(queue[0], download=False)
+                        title = info.get('title', 'Unknown Title')
+                        duration = info.get('duration', 0)
+                        embed.add_field(
+                            name=f"1. {title}",
+                            value=f"Duration: {self.format_duration(duration)}",
+                            inline=False
+                        )
+                except:
+                    embed.add_field(
+                        name="1. [Unable to get info]",
+                        value=queue[0],
+                        inline=False
+                    )
+            
+            # Process remaining items (if any)
+            if len(queue) > 1:
+                # Create a task to process the rest of the queue
+                async def process_remaining():
+                    for i, url in enumerate(queue[1:10], 2):  # Show first 10 items
+                        try:
+                            with YoutubeDL(self.YDL_OPTIONS) as ydl:
+                                info = ydl.extract_info(url, download=False)
+                                title = info.get('title', 'Unknown Title')
+                                duration = info.get('duration', 0)
+                                embed.add_field(
+                                    name=f"{i}. {title}",
+                                    value=f"Duration: {self.format_duration(duration)}",
+                                    inline=False
+                                )
+                        except:
+                            embed.add_field(
+                                name=f"{i}. [Unable to get info]",
+                                value=url,
+                                inline=False
+                            )
+                    
+                    if len(queue) > 10:
+                        embed.set_footer(text=f"And {len(queue) - 10} more...")
+                    
+                    # Edit the original message with complete embed
+                    try:
+                        await ctx.edit(embed=embed)
+                    except:
+                        await ctx.send(embed=embed)
+                
+                # Start processing without waiting
+                asyncio.create_task(process_remaining())
+            
+            # Send initial embed immediately
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            print(f"Error showing queue: {e}")
+            await ctx.send("An error occurred while processing the queue.")
+
+    @play.before_invoke
+    @pause.before_invoke
+    @resume.before_invoke
+    @stop.before_invoke
+    @skip.before_invoke
+    async def ensure_voice(self, ctx):
+        if ctx.voice_client is None:
+            if ctx.author.voice:
+                await ctx.author.voice.channel.connect()
+            else:
+                await ctx.send("You are not connected to a voice channel.")
+                raise commands.CommandError("Author not connected to a voice channel.")
 
 async def setup(bot):
-    await bot.add_cog(Music(bot))
-
-
-
-
+    await bot.add_cog(MusicCog(bot))
