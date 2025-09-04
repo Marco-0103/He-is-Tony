@@ -11,6 +11,7 @@ async def setup(bot):
     bot.tree.add_command(p)
     bot.tree.add_command(o2)
     bot.tree.add_command(bardog)
+    bot.tree.add_command(心碎)
 
 @commands.command()
 async def sleep(ctx):
@@ -35,7 +36,7 @@ async def gn(interaction: discord.Interaction ):
 
 @discord.app_commands.command(name="love",description="Tony愛情史")
 async def love(interaction: discord.Interaction ):
-    await interaction.response.send_message("2018-2023: O2\nNow: 他是")
+    await interaction.response.send_message("2018-2023: O2\n2024-2025: 他是\nnow: Nathan")
 
 @discord.app_commands.command(name="p",description="Who play?")
 async def p(interaction: discord.Interaction):
@@ -48,3 +49,7 @@ async def o2(interaction: discord.Interaction):
 @discord.app_commands.command(name="bardog",description="巴狗")
 async def bardog(interaction: discord.Interaction):
     await interaction.response.send_message("巴狗萬歲")
+
+@discord.app_commands.command(name="心碎",description="💔")
+async def 心碎(interaction: discord.Interaction):
+    await interaction.response.send_message("我失戀了💔")

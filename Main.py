@@ -48,7 +48,6 @@ async def setup_hook():
 async def on_disconnect():
     print("Bot disconnected successfully")
     sys.stdout.flush()
-    # You could add reconnection logic here if needed
 
 bot.run(os.getenv("DISCORD_TOKEN")) #Run the bot with discord token
 
