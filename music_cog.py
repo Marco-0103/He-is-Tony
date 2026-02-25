@@ -9,7 +9,7 @@ class MusicCog(commands.Cog):
         self.bot = bot
         self.queues = {}
         self.FFMPEG_OPTIONS = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
             'options': '-vn -c:a libopus -b:a 96k -ar 48000 -ac 2'
         }
         
@@ -17,9 +17,12 @@ class MusicCog(commands.Cog):
             'format': 'bestaudio/best',
             'noplaylist': True,
             'quiet': True,
-            'extractaudio': True,
-            'audioformat': 'opus',
-            'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+            'no_warnings': True,
+            'default_search': 'auto',
+            'source_address': '0.0.0.0',
+            'cookiefile': 'cookies.txt',  # Optional: for age-restricted content
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'extract_flat': False,
         }
 
     def get_queue(self, ctx):

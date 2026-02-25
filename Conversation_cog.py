@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from datetime import datetime
 
 async def setup(bot):
     bot.add_command(sleep)
@@ -12,6 +13,7 @@ async def setup(bot):
     bot.tree.add_command(o2)
     bot.tree.add_command(bardog)
     bot.tree.add_command(心碎)
+    bot.tree.add_command(time_command)  
 
 @commands.command()
 async def sleep(ctx):
@@ -53,3 +55,9 @@ async def bardog(interaction: discord.Interaction):
 @discord.app_commands.command(name="心碎",description="💔")
 async def 心碎(interaction: discord.Interaction):
     await interaction.response.send_message("我失戀了💔")
+
+@discord.app_commands.command(name="time", description="Get the current time")
+async def time_command(interaction: discord.Interaction):
+    # Get current time
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    await interaction.response.send_message(f"🕐 Current time: {current_time}")
